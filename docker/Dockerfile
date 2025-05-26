@@ -1,4 +1,4 @@
-# Usage: 
+# Usage:
 # git clone https://github.com/RosettaCommons/RFdiffusion.git
 # cd RFdiffusion
 # docker build -f docker/Dockerfile -t rfdiffusion .
@@ -21,7 +21,7 @@ FROM nvcr.io/nvidia/cuda:11.6.2-cudnn8-runtime-ubuntu20.04
 
 COPY . /app/RFdiffusion/
 
-RUN apt-get -q update \ 
+RUN apt-get -q update \
   && DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y \
   git \
   python3.9 \
@@ -42,9 +42,17 @@ RUN apt-get -q update \
   pyrsistent==0.19.3 \
   /app/RFdiffusion/env/SE3Transformer \
   && pip install --no-cache-dir /app/RFdiffusion --no-deps
-  
-WORKDIR /app/RFdiffusion
+
+# new numpy broke everything
+RUN pip install numpy==1.26.4
+RUN pip install fastapi[standard]
+
+# WORKDIR /app/RFdiffusion
 
 ENV DGLBACKEND="pytorch"
 
-ENTRYPOINT ["python3.9", "scripts/run_inference.py"]
+# ENTRYPOINT ["python3.9", "scripts/run_inference.py"]
+
+COPY api /api
+
+CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]
