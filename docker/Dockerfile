@@ -19,40 +19,49 @@
 
 FROM nvcr.io/nvidia/cuda:11.6.2-cudnn8-runtime-ubuntu20.04
 
-COPY . /app/RFdiffusion/
+# Install system dependencies
+RUN apt-get -q update && \
+    DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y \
+    git \
+    python3.9 \
+    python3-pip && \
+    python3.9 -m pip install -q -U --no-cache-dir pip && \
+    rm -rf /var/lib/apt/lists/* && \
+    apt-get autoremove -y && \
+    apt-get clean
 
-RUN apt-get -q update \
-  && DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y \
-  git \
-  python3.9 \
-  python3-pip \
-  && python3.9 -m pip install -q -U --no-cache-dir pip \
-  && rm -rf /var/lib/apt/lists/* \
-  && apt-get autoremove -y \
-  && apt-get clean \
-  && pip install -q --no-cache-dir \
-  dgl==1.0.2+cu116 -f https://data.dgl.ai/wheels/cu116/repo.html \
-  torch==1.12.1+cu116 --extra-index-url https://download.pytorch.org/whl/cu116 \
-  e3nn==0.3.3 \
-  wandb==0.12.0 \
-  pynvml==11.0.0 \
-  git+https://github.com/NVIDIA/dllogger#egg=dllogger \
-  decorator==5.1.0 \
-  hydra-core==1.3.2 \
-  pyrsistent==0.19.3 \
-  /app/RFdiffusion/env/SE3Transformer \
-  && pip install --no-cache-dir /app/RFdiffusion --no-deps
+# Pre-install Python dependencies that rarely change
+RUN pip install -q --no-cache-dir \
+    dgl==1.0.2+cu116 -f https://data.dgl.ai/wheels/cu116/repo.html && \
+    pip install -q --no-cache-dir \
+    torch==1.12.1+cu116 --extra-index-url https://download.pytorch.org/whl/cu116 && \
+    pip install -q --no-cache-dir \
+    e3nn==0.3.3 \
+    wandb==0.12.0 \
+    pynvml==11.0.0 \
+    git+https://github.com/NVIDIA/dllogger#egg=dllogger \
+    decorator==5.1.0 \
+    hydra-core==1.3.2 \
+    pyrsistent==0.19.3
 
-# new numpy broke everything
+# Add SE3Transformer submodule only (assume it doesn't change often)
+COPY env/SE3Transformer /tmp/SE3Transformer
+RUN pip install --no-cache-dir /tmp/SE3Transformer
+
+# Reinstall numpy and install FastAPI
 RUN pip install numpy==1.26.4
 RUN pip install fastapi[standard]
 
-# WORKDIR /app/RFdiffusion
+# Add the whole thing and install it...
+COPY . /app/RFdiffusion/
+# ...but don't bloat the image with the model's weights
+RUN rm -rf /app/RFdiffusion/service_cache
+RUN pip install --no-cache-dir /app/RFdiffusion --no-deps
 
+# Set environment
 ENV DGLBACKEND="pytorch"
 
-# ENTRYPOINT ["python3.9", "scripts/run_inference.py"]
-
+# Copy your API separately
 COPY api /api
 
 CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]
