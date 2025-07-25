@@ -2,6 +2,7 @@ import shutil
 import logging
 from pathlib import Path
 import subprocess as sp
+from tempfile import NamedTemporaryFile
 import time
 from typing import Union
 
@@ -21,18 +22,14 @@ async def health_check():
     return {"status": "ready"}
 
 
-@app.post("/biology/ipd/rfdiffusion/generate")
+@app.post("/api/generate")
 async def generate(
     pdb_file: UploadFile = File(...),
-    output_prefix: str = Form("rfd_output"),
     contigmap: str = Form("[]"),
     num_designs: int = Form(40),
     diffuser_partial_T: Union[int, float] = Form(None),
+    run_output_dirname: str = Form(""),
 ):
-    # check that output_prefix is not a path
-    if Path(output_prefix).parent != Path("."):
-        raise HTTPException(status_code=400, detail="output_prefix must not be a path")
-
     # read the pdb file, if it exists
     if not pdb_file.filename.endswith(".pdb"):
         raise HTTPException(status_code=400, detail="Invalid file type. Only .pdb files are accepted.")
@@ -40,22 +37,20 @@ async def generate(
         raise HTTPException(status_code=400, detail="No file uploaded.")
 
     # Save the uploaded file to a temporary location
-    input_file_path = BASE_DIR / Path("temp.pdb")
-    input_file_path.write_text(pdb_file.file.read().decode("utf-8").strip())
+    tmp_infile = NamedTemporaryFile(suffix=".pdb", delete=True)
+    tmp_infile.write(pdb_file.file.read())
+    tmp_infile.flush()
 
     # make the output directory if it doesn't exist
-    output_dir = BASE_DIR / Path("rfdiffusion")
-    if output_dir.exists():
-        logging.warning(f"Removing old output directory: {output_dir}")
-        shutil.rmtree(output_dir)
+    output_dir = BASE_DIR / run_output_dirname
     output_dir.mkdir(exist_ok=True)
 
     # build the command
     rfdiffusion_cmd = [
         "python3.9",
         "/app/RFdiffusion/scripts/run_inference.py",
-        f"inference.input_pdb={input_file_path}",
-        f"inference.output_prefix={output_dir / Path(output_prefix)}",
+        f"inference.input_pdb={Path(tmp_infile.name)}",
+        f"inference.output_prefix={output_dir / 'design'}",
         f"inference.model_directory_path={SERVICE_CACHE_DIR}",
         f"inference.num_designs={num_designs}",
         f"contigmap.contigs={contigmap}",
@@ -75,9 +70,10 @@ async def generate(
 
     # remove the temporary pdb file
     try:
-        input_file_path.unlink()
+        tmp_infile.close()
+        logging.info(f"Temporary pdb file removed: {tmp_infile}")
     except FileNotFoundError:
-        logging.warning(f"Temporary pdb file not found: {input_file_path}")
+        logging.warning(f"Temporary pdb file not found: {tmp_infile}")
     except Exception as e:
         logging.error(f"Error removing temporary pdb file: {e}")
 
