@@ -25,7 +25,8 @@ async def health_check():
 async def generate(
     pdb_file: UploadFile = File(...),
     contigmap: str = Form("[]"),
-    num_designs: int = Form(40),
+    num_designs: int = Form(10),
+    diffuser_T: int = Form(50),
     diffuser_partial_T: Union[int, float] = Form(None),
     run_output_dirname: str = Form(""),
 ):
@@ -53,6 +54,7 @@ async def generate(
         f"inference.model_directory_path={SERVICE_CACHE_DIR}",
         f"inference.num_designs={num_designs}",
         f"contigmap.contigs={contigmap}",
+        f"diffuser.T={diffuser_T}",
     ]
     if diffuser_partial_T is not None:
         rfdiffusion_cmd.append(f"diffuser.partial_T={diffuser_partial_T}")
